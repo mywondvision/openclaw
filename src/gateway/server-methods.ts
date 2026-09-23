@@ -273,6 +273,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
   methodRegistry: GatewayMethodRegistry;
   expectedProfileBinding?: ExpectedProfileBinding;
   hasCurrentClientAuthority?: () => boolean;
+  assertInvocationCurrent?: () => void;
 }): Promise<{
   error: ErrorShape | null;
   sessionScope?: SessionOperatorScope;
@@ -395,6 +396,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
           context: params.context,
           ownSessionOnly: scopeAuthorization.sessionScope === "operator.sessions.write",
           hasCurrentClientAuthority: params.hasCurrentClientAuthority,
+          assertInvocationCurrent: params.assertInvocationCurrent,
         });
         params.expectedProfileBinding?.assertCurrent();
         sessionAccessAuthority.assertCurrent();
@@ -637,6 +639,7 @@ export async function handleGatewayRequest(
       opts.methodRegistry?.getHandler(req.method) !== undefined
         ? opts.methodRegistry
         : createRequestGatewayMethodRegistry(opts.extraHandlers);
+    const requestMutationAuthority = readGatewayRequestMutationAuthority(opts);
     const authorization = await authorizeGatewayRequestPreDispatch({
       method: req.method,
       requestParams: req.params,
@@ -645,6 +648,10 @@ export async function handleGatewayRequest(
       methodRegistry,
       expectedProfileBinding: profileBinding,
       hasCurrentClientAuthority,
+      assertInvocationCurrent: () => {
+        profileBinding?.assertCurrent();
+        requestMutationAuthority.assertCurrent();
+      },
     });
     sessionAccessAuthority = authorization.sessionAccessAuthority;
     entry?.assertOpen();
@@ -660,7 +667,6 @@ export async function handleGatewayRequest(
     }
     // Every session mutation owner uses these pre-commit assertions. Compose the
     // host lifetime here so individual handlers cannot lose it across an await.
-    const requestMutationAuthority = readGatewayRequestMutationAuthority(opts);
     const sessionMutationAuthorization = withSessionMutationCommitGuard(
       authorization.sessionMutationAuthorization,
       requestMutationAuthority.assertCurrent,
