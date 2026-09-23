@@ -240,6 +240,9 @@ describe("listGatewayMethods", () => {
       "users.linkChannelIdentity",
       "users.unlinkChannelIdentity",
       "users.listChannelIdentities",
+      "portal.session.list",
+      "portal.session.open",
+      "portal.session.close",
     ];
     expect(listGatewayMethods().slice(-expectedSuffix.length)).toEqual(expectedSuffix);
     const methods = listGatewayMethods();
@@ -300,6 +303,9 @@ describe("listGatewayMethods", () => {
       "users.linkChannelIdentity",
       "users.unlinkChannelIdentity",
       "users.listChannelIdentities",
+      "portal.session.list",
+      "portal.session.open",
+      "portal.session.close",
     ]);
   });
 
@@ -489,6 +495,9 @@ describe("listGatewayMethods", () => {
       "users.linkChannelIdentity",
       "users.unlinkChannelIdentity",
       "users.listChannelIdentities",
+      "portal.session.list",
+      "portal.session.open",
+      "portal.session.close",
     ];
     expect(coreMethods.slice(-expectedCoreSuffix.length)).toEqual(expectedCoreSuffix);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));
