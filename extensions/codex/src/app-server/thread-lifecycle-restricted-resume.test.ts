@@ -1,14 +1,26 @@
 import path from "node:path";
 import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  createPluginStateSyncKeyedStoreForTests,
+  resetPluginStateStoreForTests,
+} from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { threadStartResult as nativeThreadStartResult } from "./codex-app-server.test-fixtures.js";
 import { createCodexTestHostCapabilities } from "./host-capability.test-support.js";
-import { sessionBindingIdentity } from "./session-binding.js";
+import {
+  bindingStoreKey,
+  CODEX_APP_SERVER_BINDING_MAX_ENTRIES,
+  CODEX_APP_SERVER_BINDING_NAMESPACE,
+  createCodexAppServerBindingStore,
+  sessionBindingIdentity,
+  type StoredCodexAppServerBinding,
+} from "./session-binding.js";
 import {
   resetCodexTestBindingStore,
   testCodexAppServerBindingStore,
 } from "./session-binding.test-helpers.js";
 import { createCodexTestModel, useAutoCleanupTempDirTracker } from "./test-support.js";
+import { startOrResumeThread as startOrResumeThreadWithStore } from "./thread-lifecycle.js";
 import {
   createLeasedCodexLifecycleHarness,
   startOrResumeThread,
@@ -75,6 +87,7 @@ describe("restricted same-thread continuation with mock transport", () => {
   });
 
   afterEach(() => {
+    resetPluginStateStoreForTests();
     vi.restoreAllMocks();
   });
 
@@ -266,6 +279,95 @@ describe("restricted same-thread continuation with mock transport", () => {
     expect(
       fixture.request.mock.calls.filter(([method]) => method === "thread/resume"),
     ).toHaveLength(0);
+  });
+
+  it("loads a pre-upgrade restricted binding through persisted plugin state", async () => {
+    const workspaceDir = path.join(tempDir, "workspace");
+    const stateDir = path.join(tempDir, "state");
+    const params = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
+    params.pluginHarnessToolPolicyRestricted = true;
+    const identity = sessionBindingIdentity({
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      config: params.config,
+    });
+    const stateOptions = {
+      namespace: CODEX_APP_SERVER_BINDING_NAMESPACE,
+      maxEntries: CODEX_APP_SERVER_BINDING_MAX_ENTRIES,
+      env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+    };
+    const initialState = createPluginStateSyncKeyedStoreForTests<StoredCodexAppServerBinding>(
+      "codex",
+      stateOptions,
+    );
+    initialState.register(bindingStoreKey(identity), {
+      version: 1,
+      state: "active",
+      binding: {
+        threadId: "thread-persisted-pre-upgrade",
+        cwd: workspaceDir,
+        nativeToolPolicyRestricted: true,
+      },
+    });
+
+    resetPluginStateStoreForTests();
+    const reopenedState = createPluginStateSyncKeyedStoreForTests<StoredCodexAppServerBinding>(
+      "codex",
+      stateOptions,
+    );
+    const bindingStore = createCodexAppServerBindingStore(reopenedState);
+    expect(bindingStore.read(identity)).toEqual({
+      threadId: "thread-persisted-pre-upgrade",
+      cwd: workspaceDir,
+      nativeToolPolicyRestricted: true,
+    });
+
+    const respond = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
+      if (method === "thread/start") {
+        return threadStartResult("thread-persisted-legacy-transient");
+      }
+      if (method === "mcpServerStatus/list") {
+        return { data: [], nextCursor: null };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+    const fixture = await createLeasedCodexLifecycleHarness({
+      agentDir: path.join(tempDir, "agent"),
+      respond,
+    });
+    const result = await startOrResumeThreadWithStore({
+      client: fixture.client,
+      signal: new AbortController().signal,
+      cwd: workspaceDir,
+      dynamicTools: [],
+      appServer: createThreadLifecycleAppServerOptions(),
+      nativeCodeModeEnabled: false,
+      params,
+      bindingStore,
+    });
+
+    expect(result).toMatchObject({
+      threadId: "thread-persisted-legacy-transient",
+      lifecycle: { action: "started" },
+    });
+    expect(fixture.request.mock.calls.filter(([method]) => method === "thread/start")).toHaveLength(
+      1,
+    );
+    expect(
+      fixture.request.mock.calls.filter(([method]) => method === "thread/resume"),
+    ).toHaveLength(0);
+    expect(bindingStore.read(identity)).toEqual({
+      threadId: "thread-persisted-pre-upgrade",
+      cwd: workspaceDir,
+      nativeToolPolicyRestricted: true,
+    });
   });
 
   it("keeps the upstream transient start for an unrestricted binding", async () => {
