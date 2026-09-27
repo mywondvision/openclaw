@@ -370,6 +370,107 @@ describe("restricted same-thread continuation with mock transport", () => {
     });
   });
 
+  it("keeps an allowlist-restricted thread (web search persistently denied) attested and never rotates it", async () => {
+    const workspaceDir = path.join(tempDir, "workspace");
+    const attempt = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
+    attempt.pluginHarnessToolPolicyRestricted = true;
+    const respond = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
+      if (method === "thread/start" || method === "thread/resume") {
+        return threadStartResult("thread-allowlist-restricted");
+      }
+      if (method === "mcpServerStatus/list") {
+        return { data: [], nextCursor: null };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+    const fixture = await createLeasedCodexLifecycleHarness({
+      agentDir: path.join(tempDir, "agent"),
+      respond,
+    });
+    const common = {
+      client: fixture.client,
+      signal: new AbortController().signal,
+      cwd: workspaceDir,
+      dynamicTools: [],
+      appServer: createThreadLifecycleAppServerOptions(),
+      nativeCodeModeEnabled: false,
+      webSearchAllowed: false,
+      persistentWebSearchAllowed: false,
+    };
+    const count = (method: string) =>
+      fixture.request.mock.calls.filter(([name]) => name === method).length;
+    const identity = sessionBindingIdentity({
+      sessionId: attempt.sessionId,
+      sessionKey: attempt.sessionKey,
+      agentId: attempt.agentId,
+      config: attempt.config,
+    });
+
+    const first = await startOrResumeThread({ ...common, params: attempt });
+    expect(first).toMatchObject({
+      threadId: "thread-allowlist-restricted",
+      lifecycle: { action: "started" },
+    });
+    const attested = testCodexAppServerBindingStore.read(identity);
+    expect(attested).toMatchObject({
+      nativeToolPolicyRestricted: true,
+      restrictedThreadConfigFingerprint: expect.any(String),
+    });
+    await fixture.endTurn("thread-allowlist-restricted");
+
+    // Ordinary restricted resume keeps the same thread and its attestation.
+    const second = await startOrResumeThread({
+      ...common,
+      params: { ...attempt, runId: "run-2", prompt: "second" },
+    });
+    expect(second).toMatchObject({
+      threadId: "thread-allowlist-restricted",
+      lifecycle: { action: "resumed" },
+    });
+    expect(testCodexAppServerBindingStore.read(identity)?.restrictedThreadConfigFingerprint).toBe(
+      attested?.restrictedThreadConfigFingerprint,
+    );
+    await fixture.endTurn("thread-allowlist-restricted");
+    const resumes = count("thread/resume");
+
+    // Policy drift fails closed with a typed reason before any RPC.
+    await expect(
+      startOrResumeThread({
+        ...common,
+        params: {
+          ...attempt,
+          runId: "run-drift",
+          pluginHarnessToolPolicySafeDeniedTools: ["image_generate"],
+        },
+      }),
+    ).rejects.toThrow(/^codex_restricted_continuation:policy_changed: /);
+
+    // A configuration change that upstream handles by rotating the binding
+    // (here: MCP servers) cannot replace the attested thread silently.
+    await expect(
+      startOrResumeThread({
+        ...common,
+        mcpServersFingerprintEvaluated: true,
+        mcpServersFingerprint: "sha256:changed-mcp-servers",
+        params: { ...attempt, runId: "run-rotate" },
+      }),
+    ).rejects.toThrow(/^codex_restricted_continuation:binding_replace_denied: /);
+    expect(count("thread/start")).toBe(1);
+    expect(count("thread/resume")).toBe(resumes);
+    expect(testCodexAppServerBindingStore.read(identity)?.threadId).toBe(
+      "thread-allowlist-restricted",
+    );
+    expect(testCodexAppServerBindingStore.read(identity)?.restrictedThreadConfigFingerprint).toBe(
+      attested?.restrictedThreadConfigFingerprint,
+    );
+  });
+
   it("keeps the upstream transient start for an unrestricted binding", async () => {
     const workspaceDir = path.join(tempDir, "workspace");
     const attempt = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);

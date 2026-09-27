@@ -365,7 +365,9 @@ export async function startOrResumeThread(
         params.nativeProviderWebSearchSupport === "unknown" &&
         !binding?.threadId);
     let rotatedContextEngineBinding = false;
-    let restrictedResumeCandidate = false;
+    // An attested strict binding is verified and keeps its fingerprint on every
+    // resume path, including ordinary (non-transient) restricted resumes.
+    let restrictedResumeCandidate = strictRestrictedContinuation;
     let prebuiltPluginThreadConfig: CodexPluginThreadConfig | undefined;
     // Scoped inventory requires a loaded native thread. The warm/resume owner
     // calls this only after acquiring that exact subscription, before admission.

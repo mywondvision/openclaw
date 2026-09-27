@@ -15,12 +15,13 @@ export function resolveStrictRestrictedContinuation(options: {
   persistentWebSearchAllowed?: boolean;
   ringZeroActive: boolean;
 }): boolean {
+  // Persistently denied web search (a finite agent tool allowlist) is still a
+  // restricted surface: its attested thread must never rotate silently either.
   const strict = Boolean(
     options.binding?.threadId &&
     options.binding.nativeToolPolicyRestricted === true &&
     options.binding.restrictedThreadConfigFingerprint !== undefined &&
     options.nativeCodeModeEnabled === false &&
-    !(options.webSearchAllowed === false && options.persistentWebSearchAllowed === false) &&
     !options.ringZeroActive,
   );
   if (
