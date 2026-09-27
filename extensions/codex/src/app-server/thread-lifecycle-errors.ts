@@ -19,6 +19,24 @@ export class CodexThreadClientReplacementError extends AgentHarnessPreflightErro
   }
 }
 
+export type CodexRestrictedContinuationReason =
+  | "policy_changed"
+  | "attestation_unavailable"
+  | "pending_native_transition"
+  | "binding_replace_denied";
+
+/** Fail-closed restricted continuation with a machine-readable reason. */
+export class CodexRestrictedContinuationError extends Error {
+  readonly code = "codex_restricted_continuation";
+  readonly reason: CodexRestrictedContinuationReason;
+
+  constructor(reason: CodexRestrictedContinuationReason, detail: string) {
+    super(`codex_restricted_continuation:${reason}: ${detail}`);
+    this.name = "CodexRestrictedContinuationError";
+    this.reason = reason;
+  }
+}
+
 export class CodexThreadBindingConflictError extends Error {
   constructor(threadId: string, operation: string) {
     super(`Codex thread binding changed while ${operation}: ${threadId}`);

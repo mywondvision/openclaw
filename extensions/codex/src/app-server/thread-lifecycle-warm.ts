@@ -36,7 +36,10 @@ import {
   fingerprintCodexThreadConfig,
   fingerprintRestrictedThreadConfig,
 } from "./thread-fingerprints.js";
-import { CodexThreadBindingConflictError } from "./thread-lifecycle-errors.js";
+import {
+  CodexRestrictedContinuationError,
+  CodexThreadBindingConflictError,
+} from "./thread-lifecycle-errors.js";
 import type { CodexThreadLifecycleTimingTracker } from "./thread-lifecycle-timing.js";
 import type {
   CodexAppServerThreadLifecycleBinding,
@@ -355,7 +358,8 @@ export async function tryReuseCodexLiveThread(
         !binding.restrictedThreadConfigFingerprint
       ) {
         preserveSubscription = true;
-        throw new Error(
+        throw new CodexRestrictedContinuationError(
+          "attestation_unavailable",
           "Codex restricted thread policy attestation is unavailable; no thread was started",
         );
       }
@@ -369,7 +373,10 @@ export async function tryReuseCodexLiveThread(
       );
       if (candidate !== binding.restrictedThreadConfigFingerprint) {
         preserveSubscription = true;
-        throw new Error("Codex restricted thread policy changed; no thread was started");
+        throw new CodexRestrictedContinuationError(
+          "policy_changed",
+          "Codex restricted thread policy changed; no thread was started",
+        );
       }
     }
     const liveThreadConfigFingerprint = incognito

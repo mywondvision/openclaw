@@ -177,7 +177,7 @@ describe("restricted same-thread continuation with mock transport", () => {
           pluginHarnessToolPolicySafeDeniedTools: ["image_generate"],
         },
       }),
-    ).rejects.toThrow(/restricted|changed/);
+    ).rejects.toThrow(/^codex_restricted_continuation:policy_changed: /);
     expect(fixture.request.mock.calls.filter(([method]) => method === "thread/start")).toHaveLength(
       1,
     );
@@ -260,7 +260,7 @@ describe("restricted same-thread continuation with mock transport", () => {
           pluginHarnessToolPolicySafeDeniedTools: ["image_generate"],
         },
       }),
-    ).rejects.toThrow(/restricted|changed/);
+    ).rejects.toThrow(/^codex_restricted_continuation:policy_changed: /);
     expect(fixture.request.mock.calls.filter(([method]) => method === "thread/start")).toHaveLength(
       1,
     );
