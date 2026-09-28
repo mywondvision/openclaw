@@ -26,6 +26,7 @@ import {
   unwrapSessionTranscriptWorkerReply,
 } from "./session-history-worker-errors.js";
 import { resolveSessionStorePathForScope } from "./session-store-path.js";
+import { toSessionHistoryWorkerTaskInput } from "./session-transcript-worker-input.js";
 import {
   createSessionHistoryWorkerReaders,
   type SessionHistoryWorkerRequestRunner,
@@ -170,7 +171,7 @@ export function retainSessionHistoryWorkerDatabase(
             assertCurrent();
             sequence = ++lane.nativeSequence;
             owned.nativeSequences.set(lane, sequence);
-            return { ...input, database };
+            return toSessionHistoryWorkerTaskInput(input, database);
           },
           {
             inputBytes,
