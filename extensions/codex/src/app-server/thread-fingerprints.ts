@@ -120,9 +120,10 @@ export function fingerprintCodexThreadConfig(
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const PROVIDER_BASE_URL_KEY = /^(?:openai_base_url|model_providers\.[^.]+\.base_url)$/u;
 
-// OpenClaw routes provider traffic through its own loopback inference proxy, whose
-// port is chosen per Gateway process. That port is transport, not policy: keep the
-// route identity (scheme, loopback, path) and drop only the loopback port so a
+// OpenClaw routes provider traffic through its own loopback inference proxy. Its
+// port and the leading path segment (a private per-process transport token, see
+// inference-proxy pathPrefix) change on every Gateway start. They are transport,
+// not policy: keep scheme and the remaining route path, drop port and token, so a
 // restart does not look like restricted-policy drift. Remote endpoints stay exact.
 function normalizeProviderBaseUrl(value: JsonValue): JsonValue {
   if (typeof value !== "string") {
@@ -133,7 +134,8 @@ function normalizeProviderBaseUrl(value: JsonValue): JsonValue {
     if (!LOOPBACK_HOSTS.has(url.hostname)) {
       return value;
     }
-    return `${url.protocol}//loopback${url.pathname}${url.search}`;
+    const route = url.pathname.split("/").slice(2).join("/");
+    return `${url.protocol}//loopback-inference-route/${route}${url.search}`;
   } catch {
     return value;
   }

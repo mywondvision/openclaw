@@ -101,9 +101,12 @@ describe("restricted thread config fingerprint", () => {
       false,
     );
 
-  it("ignores the per-process port of the loopback inference proxy", () => {
+  it("ignores the per-process port and transport token of the loopback inference proxy", () => {
     expect(fingerprint({ openai_base_url: "http://127.0.0.1:51001/v1/openai" })).toBe(
       fingerprint({ openai_base_url: "http://127.0.0.1:60123/v1/openai" }),
+    );
+    expect(fingerprint({ openai_base_url: "http://127.0.0.1:51001/tokenAAAA/azure-api./v1" })).toBe(
+      fingerprint({ openai_base_url: "http://127.0.0.1:60123/tokenBBBB/azure-api./v1" }),
     );
     expect(fingerprint({ "model_providers.local.base_url": "http://localhost:4000/route" })).toBe(
       fingerprint({ "model_providers.local.base_url": "http://localhost:4999/route" }),
