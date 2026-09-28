@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CodexAppServerThreadBinding } from "./session-binding.js";
+import { fingerprintRestrictedThreadConfig } from "./thread-fingerprints.js";
 import { CodexRestrictedContinuationError } from "./thread-lifecycle-errors.js";
 import {
   assertRestrictedBindingMayBeCleared,
@@ -82,5 +83,46 @@ describe("restricted continuation reasons", () => {
       }),
     ).toBe("transient");
     expect(resolveStrictRestrictedContinuation({ ...strict, binding: legacy })).toBe(false);
+  });
+});
+
+describe("restricted thread config fingerprint", () => {
+  const attempt = {
+    sessionId: "s",
+    sessionKey: "agent:dev:s",
+    pluginHarnessToolPolicyRestricted: true,
+  };
+  const fingerprint = (config: Record<string, unknown>, sandbox = "workspace-write") =>
+    fingerprintRestrictedThreadConfig(
+      { model: "m", cwd: "/w", sandbox, approvalPolicy: "never", config } as never,
+      undefined,
+      "tools",
+      attempt,
+      false,
+    );
+
+  it("ignores the per-process port of the loopback inference proxy", () => {
+    expect(fingerprint({ openai_base_url: "http://127.0.0.1:51001/v1/openai" })).toBe(
+      fingerprint({ openai_base_url: "http://127.0.0.1:60123/v1/openai" }),
+    );
+    expect(fingerprint({ "model_providers.local.base_url": "http://localhost:4000/route" })).toBe(
+      fingerprint({ "model_providers.local.base_url": "http://localhost:4999/route" }),
+    );
+    expect(
+      fingerprint({ model_providers: { local: { base_url: "http://[::1]:1/r", name: "x" } } }),
+    ).toBe(
+      fingerprint({ model_providers: { local: { base_url: "http://[::1]:2/r", name: "x" } } }),
+    );
+  });
+
+  it("still detects a different route, remote endpoint or policy", () => {
+    const base = fingerprint({ openai_base_url: "http://127.0.0.1:51001/v1/openai" });
+    expect(fingerprint({ openai_base_url: "http://127.0.0.1:51001/v1/other" })).not.toBe(base);
+    expect(fingerprint({ openai_base_url: "https://api.example.invalid/v1" })).not.toBe(
+      fingerprint({ openai_base_url: "https://api.example.invalid:8443/v1" }),
+    );
+    expect(
+      fingerprint({ openai_base_url: "http://127.0.0.1:51001/v1/openai" }, "read-only"),
+    ).not.toBe(base);
   });
 });

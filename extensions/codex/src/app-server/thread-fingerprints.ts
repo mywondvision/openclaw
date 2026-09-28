@@ -117,6 +117,55 @@ export function fingerprintCodexThreadConfig(
   );
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+const PROVIDER_BASE_URL_KEY = /^(?:openai_base_url|model_providers\.[^.]+\.base_url)$/u;
+
+// OpenClaw routes provider traffic through its own loopback inference proxy, whose
+// port is chosen per Gateway process. That port is transport, not policy: keep the
+// route identity (scheme, loopback, path) and drop only the loopback port so a
+// restart does not look like restricted-policy drift. Remote endpoints stay exact.
+function normalizeProviderBaseUrl(value: JsonValue): JsonValue {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    const url = new URL(value);
+    if (!LOOPBACK_HOSTS.has(url.hostname)) {
+      return value;
+    }
+    return `${url.protocol}//loopback${url.pathname}${url.search}`;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeRestrictedFingerprintConfig(config: JsonValue | undefined): JsonValue {
+  if (!isJsonObject(config)) {
+    return config ?? {};
+  }
+  return Object.fromEntries(
+    Object.entries(config).map(([key, value]) => {
+      if (PROVIDER_BASE_URL_KEY.test(key)) {
+        return [key, normalizeProviderBaseUrl(value)];
+      }
+      if (key === "model_providers" && isJsonObject(value)) {
+        return [
+          key,
+          Object.fromEntries(
+            Object.entries(value).map(([provider, entry]) => [
+              provider,
+              isJsonObject(entry) && "base_url" in entry
+                ? { ...entry, base_url: normalizeProviderBaseUrl(entry.base_url) }
+                : entry,
+            ]),
+          ),
+        ];
+      }
+      return [key, value];
+    }),
+  );
+}
+
 /** Exact creation-time identity for a restricted native thread. Persist only its hash. */
 export function fingerprintRestrictedThreadConfig(
   request: JsonObject,
@@ -155,7 +204,7 @@ export function fingerprintRestrictedThreadConfig(
       // Its only conditional input is covered by toolsAllow and hostSystemAgentActive.
       developerInstructions: request.developerInstructions ?? null,
       personality: request.personality ?? null,
-      config: request.config ?? {},
+      config: normalizeRestrictedFingerprintConfig(request.config),
       toolsAllow: attempt.toolsAllow ? [...attempt.toolsAllow] : null,
       disableTools: attempt.disableTools === true,
       delegationCapability: attempt.delegationCapability ?? null,
