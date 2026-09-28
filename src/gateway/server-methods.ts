@@ -198,6 +198,8 @@ export function createRequestGatewayMethodRegistry(
   );
 }
 
+const MAX_PENDING_CANONICAL_VALIDATION_ROUNDS = 8;
+
 /** Applies the router-owned authorization fence before any transport or typed dispatch. */
 export async function authorizeGatewayRequestPreDispatch(params: {
   method: string;
@@ -238,6 +240,10 @@ export async function authorizeGatewayRequestPreDispatch(params: {
           details: { ...gatewayStartupUnavailableDetails(), method: params.method },
         })
       : null;
+  // Canonical validation readiness can keep reporting the same database as pending
+  // (observed with sessions.create for a new key); an unbounded retry here spun the
+  // Gateway main thread at 100 % CPU forever. Fail closed with a retryable error.
+  let pendingCanonicalValidationRounds = 0;
   while (true) {
     const scopeAuthorization = authorizeMethod();
     if (scopeAuthorization.error) {
@@ -313,6 +319,23 @@ export async function authorizeGatewayRequestPreDispatch(params: {
         )
       : withCanonicalSessionValidationDeferral(() => authorizeSession());
     if (preparedSessionMutation.kind === "pending") {
+      if (++pendingCanonicalValidationRounds > MAX_PENDING_CANONICAL_VALIDATION_ROUNDS) {
+        return {
+          error: errorShape(
+            ErrorCodes.UNAVAILABLE,
+            `${params.method} could not settle canonical session validation`,
+            {
+              retryable: true,
+              retryAfterMs: GATEWAY_STARTUP_RETRY_AFTER_MS,
+              details: {
+                method: params.method,
+                agentId: preparedSessionMutation.database.agentId,
+                rounds: pendingCanonicalValidationRounds - 1,
+              },
+            },
+          ),
+        };
+      }
       const { certifySessionCanonicalValidationPending } =
         await import("../config/sessions/session-canonical-validation-readiness.js");
       await certifySessionCanonicalValidationPending(preparedSessionMutation.database);
