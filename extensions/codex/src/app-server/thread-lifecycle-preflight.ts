@@ -14,6 +14,7 @@ import {
   readCodexEffectiveConfig,
 } from "./config-layer-policy.js";
 import { assertCodexModelBackedReviewerEffectiveConfig } from "./config-reviewer.js";
+import { codexContinuationPolicy } from "./continuation-policy.js";
 import {
   isMessageOnlyCodexSourceReply,
   isSystemAgentOnlyCodexDynamicToolAllowlist,
@@ -230,6 +231,7 @@ export function buildCodexThreadBindingPolicy(
   >,
 ) {
   return {
+    continuationPolicy: codexContinuationPolicy(params),
     dynamicToolsFingerprint: preflight.dynamicToolsFingerprint,
     dynamicToolsContainDeferred: preflight.dynamicToolsContainDeferred,
     nativeSkillIsolationFingerprint: preflight.nativeSkillIsolationFingerprint,

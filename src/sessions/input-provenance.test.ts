@@ -163,3 +163,20 @@ describe("shouldPreserveUserFacingSessionStateForInputProvenance", () => {
     ).toBe(false);
   });
 });
+
+it("strict continuation survives provenance normalization and rejects malformed intent", () => {
+  const continuation = {
+    harnessId: "codex",
+    sessionId: "generation",
+    threadId: "11111111-1111-1111-1111-111111111111",
+  };
+  expect(normalizeInputProvenance({ kind: "inter_session", continuation })?.continuation).toEqual(
+    continuation,
+  );
+  expect(() =>
+    normalizeInputProvenance({
+      kind: "inter_session",
+      continuation: { harnessId: "codex", sessionId: "generation" },
+    }),
+  ).toThrow("invalid_strict_continuation");
+});

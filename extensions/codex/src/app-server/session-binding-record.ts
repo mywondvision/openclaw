@@ -190,6 +190,7 @@ const threadBindingSchema = z
       .catch(undefined),
     networkProxyProfileName: optionalStringSchema,
     networkProxyConfigFingerprint: optionalStringSchema,
+    continuationPolicy: optionalStringSchema,
     dynamicToolsFingerprint: optionalStringSchema,
     dynamicToolsContainDeferred: optionalBooleanSchema,
     webSearchThreadConfigFingerprint: optionalStringSchema,

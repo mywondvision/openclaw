@@ -36,6 +36,7 @@ import {
   fingerprintCodexThreadConfig,
   readActiveCodexTurnIdsFromResume,
 } from "./thread-fingerprints.js";
+import { CodexStrictContinuationError } from "./thread-lifecycle-errors.js";
 import {
   CodexThreadBindingConflictError,
   CodexThreadClientReplacementError,
@@ -216,6 +217,12 @@ export async function resumeExistingCodexThread(
       }),
     );
     acceptedConfiguration = configuration;
+    if (
+      params.params.inputProvenance?.continuation &&
+      response.thread.id !== resumeBinding.threadId
+    ) {
+      throw new CodexStrictContinuationError("runtime_identity_changed");
+    }
     assertCodexThreadAcceptsDirectInput(response.thread);
     configuration.assertConfigured();
     if (requestModelProvider && response.modelProvider !== requestModelProvider) {

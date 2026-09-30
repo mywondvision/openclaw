@@ -728,8 +728,14 @@ describe("Codex app-server thread lifecycle bindings", () => {
       storePath: path.join(tempDir, "admitted", "sessions.json"),
     };
     params.sessionTarget = { ...scope, sessionId: current.sessionId };
-    await upsertSessionEntry({ ...scope, entry: { sessionId: previous.sessionId, updatedAt: 1 } });
-    await patchSessionEntry({ ...scope, update: () => ({ sessionId: current.sessionId }) });
+    await upsertSessionEntry({
+      ...scope,
+      entry: { sessionId: previous.sessionId, updatedAt: 1 },
+    });
+    await patchSessionEntry({
+      ...scope,
+      update: () => ({ sessionId: current.sessionId }),
+    });
     const native = threadStartResult("recovered-native-thread");
     const fixture = await createLeasedCodexLifecycleHarness({
       agentDir: path.join(tempDir, "agent"),
@@ -760,7 +766,10 @@ describe("Codex app-server thread lifecycle bindings", () => {
     const withLease = bindingStore.withLease.bind(bindingStore);
     vi.spyOn(bindingStore, "withLease").mockImplementationOnce(async (identity, run) => {
       expect(bindingStore.read(current)).toEqual(binding);
-      await patchSessionEntry({ ...scope, update: () => ({ sessionId: "next-compaction" }) });
+      await patchSessionEntry({
+        ...scope,
+        update: () => ({ sessionId: "next-compaction" }),
+      });
       return withLease(identity, run);
     });
 
@@ -4635,3 +4644,95 @@ describe("Codex app-server thread lifecycle bindings", () => {
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
+
+describe("strict continuation under the native binding lease", () => {
+  it("rejects an absent selected binding before any native request", async () => {
+    const { sessionFile, workspaceDir } = createPaths();
+    const params = createParams(sessionFile, workspaceDir);
+    params.inputProvenance = {
+      kind: "inter_session",
+      continuation: {
+        harnessId: "codex",
+        sessionId: params.sessionId,
+        threadId: "selected-thread",
+      },
+    };
+    const request = vi.fn();
+    const client = createFakeCodexAppServerClient({ request });
+    await expect(startOrResumeThread({ client, params })).rejects.toThrow(
+      "codex_restricted_continuation:runtime_identity_changed",
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("resumes the selected thread and refuses search drift without replacement", async () => {
+    const { sessionFile, workspaceDir } = createPaths();
+    const params = createParams(sessionFile, workspaceDir);
+    const harness = await createSequentialLifecycleHarness(() => threadStartResult("thread-1"));
+    const common = {
+      client: harness.client,
+      params,
+      userMcpServersEnabled: false,
+      webSearchAllowed: true,
+    };
+    const started = await startOrResumeThread(common);
+    params.inputProvenance = {
+      kind: "inter_session",
+      continuation: { harnessId: "codex", sessionId: params.sessionId, threadId: started.threadId },
+    };
+    await harness.endTurn(started.threadId);
+    const resumed = await startOrResumeThread(common);
+    expect(resumed.threadId).toBe(started.threadId);
+    expect(resumed.lifecycle.action).toBe("resumed");
+    for (const appServer of [
+      { ...createThreadLifecycleAppServerOptions(), sandbox: "read-only" as const },
+      { ...createThreadLifecycleAppServerOptions(), approvalPolicy: "on-request" as const },
+    ]) {
+      await expect(startOrResumeThread({ ...common, appServer })).rejects.toThrow(
+        "permission_policy_changed",
+      );
+    }
+    const starts = harness.request.mock.calls.filter(
+      ([method]) => method === "thread/start",
+    ).length;
+    await expect(
+      startOrResumeThread({
+        ...common,
+        webSearchAllowed: false,
+        persistentWebSearchAllowed: false,
+      }),
+    ).rejects.toThrow("codex_restricted_continuation:binding_replace_denied");
+    expect(harness.request.mock.calls.filter(([method]) => method === "thread/start")).toHaveLength(
+      starts,
+    );
+    // Finish the subscribed warm fixture before reopening persisted native state.
+    await harness.endTurn(started.threadId);
+    await harness.client.closeAndWait();
+    const cold = await createSequentialLifecycleHarness(() => threadStartResult(started.threadId));
+    cold.seed(threadStartResult(started.threadId));
+    const reopened = await startOrResumeThread({ ...common, client: cold.client });
+    expect(reopened.threadId).toBe(started.threadId);
+    expect(cold.request.mock.calls.some(([method]) => method === "thread/resume")).toBe(true);
+    expect(cold.request.mock.calls.some(([method]) => method === "thread/start")).toBe(false);
+  });
+});
+
+it("strict continuation refuses unattested persisted legacy binding without native replacement", async () => {
+  const { sessionFile, workspaceDir } = createPaths();
+  const params = createParams(sessionFile, workspaceDir);
+  await writeCodexAppServerBinding(sessionFile, {
+    threadId: "legacy",
+    cwd: workspaceDir,
+    dynamicToolsFingerprint: "[]",
+  });
+  params.inputProvenance = {
+    kind: "inter_session",
+    continuation: { harnessId: "codex", sessionId: params.sessionId, threadId: "legacy" },
+  };
+  const request = vi.fn();
+  await expect(
+    startOrResumeThread({ client: createFakeCodexAppServerClient({ request }), params }),
+  ).rejects.toThrow("attestation_unavailable");
+  expect(request).not.toHaveBeenCalled();
+  expect((await readCodexAppServerBinding(sessionFile))?.threadId).toBe("legacy");
+});

@@ -13,6 +13,7 @@ import {
 } from "./binding-connection.js";
 import { prepareCodexWorkspaceReferences } from "./client-runtime.js";
 import { isCodexAppServerIndeterminateRequestCancellationError } from "./client.js";
+import { codexContinuationPolicy } from "./continuation-policy.js";
 import { joinPresentSections } from "./developer-instruction-sections.js";
 import { resolveCodexExplicitSkillInputs } from "./explicit-skill-input.js";
 import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
@@ -29,6 +30,7 @@ import {
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
 import type { CodexAttemptTurnState } from "./run-attempt-turn-state.js";
 import { resolveCodexUltrafastServiceTier } from "./service-tier.js";
+import { CodexStrictContinuationError } from "./thread-lifecycle-errors.js";
 import { buildTurnStartParams } from "./thread-lifecycle.js";
 import { recordCodexTrajectoryContext } from "./trajectory.js";
 import { buildCodexParentLocalInstructions } from "./turn-params.js";
@@ -206,6 +208,16 @@ export async function prepareCodexAttemptTurnRequest(
         (tool) => tool.name === "session_status",
       ),
     });
+    if (
+      runtimeParams.inputProvenance?.continuation &&
+      resourceState.thread.continuationPolicy !==
+        codexContinuationPolicy({
+          appServer: turnAppServer,
+          cwd: resourceState.codexExecutionCwd,
+          sandboxPolicy: resourceState.codexSandboxPolicy,
+        })
+    )
+      throw new CodexStrictContinuationError("permission_policy_changed");
     const serviceTier = await resolveCodexUltrafastServiceTier({
       enabled:
         fastMode === "ultrafast" || (turnAppServer.enableUltrafast === true && fastMode !== false),

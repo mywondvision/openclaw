@@ -66,6 +66,7 @@ export async function mirror(params: {
     mirrorIdentity: string;
     runId: string;
     settlementWarning?: AttemptSettlementWarning;
+    execution?: { sessionId: string; threadId: string; turnId: string; nativeStatus: string };
   };
   prepareAssistantTranscriptMessage?: EmbeddedRunAttemptParams["prepareAssistantTranscriptMessage"];
   config?: SessionTranscriptWriteLockParams["config"];
@@ -144,6 +145,7 @@ export async function mirror(params: {
                 params.runId,
                 ownsTerminal,
                 terminalOwner?.settlementWarning,
+                terminalOwner?.execution,
               )
             : sourceMessage;
         const transcriptMessage = {

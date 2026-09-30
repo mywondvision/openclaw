@@ -23,7 +23,7 @@ import {
 import type { EmbeddedRunAttemptResult } from "../embedded-agent-runner/run/types.js";
 import { copyCoreTtsAttemptResultProvenance } from "../tools/tts-tool-result-provenance.js";
 import { subscribeAgentCommentaryDiagnostics } from "./commentary-diagnostics.js";
-import { recordAgentHarnessPreflightOwner } from "./errors.js";
+import { AgentHarnessPreflightError, recordAgentHarnessPreflightOwner } from "./errors.js";
 import { applyAgentHarnessResultClassification } from "./result-classification.js";
 import { EmptySettledTurnFinalizationError } from "./settled-turn-finalization-outcome.js";
 import { assertSettledTurnFinalizationResult } from "./settled-turn-finalization-result.js";
@@ -295,6 +295,12 @@ export async function runAgentHarnessLifecycleAttempt(
   );
   try {
     phase = "prepare";
+    if (
+      params.inputProvenance?.continuation &&
+      params.inputProvenance.continuation.harnessId !== harness.id
+    ) {
+      throw new AgentHarnessPreflightError("strict_continuation_harness_changed");
+    }
     assertAgentHarnessContextEngineSupport(harness, params);
     if (shouldEmitAgentRunDiagnostics(harness) && activeHarnessTrace) {
       // Non-OpenClaw harnesses get a child run trace so provider/harness spans

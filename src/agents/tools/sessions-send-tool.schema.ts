@@ -12,6 +12,16 @@ export const SessionsSendToolSchema = Type.Object({
   label: Type.Optional(Type.String({ minLength: 1, maxLength: SESSION_LABEL_MAX_LENGTH })),
   agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   message: Type.String(),
+  continuation: Type.Optional(
+    Type.Object(
+      {
+        harnessId: Type.String({ minLength: 1 }),
+        sessionId: Type.String({ minLength: 1 }),
+        threadId: Type.String({ pattern: "^[a-fA-F0-9-]{36}$" }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   timeoutSeconds: Type.Optional(Type.Integer({ minimum: 0 })),
   watch: Type.Optional(Type.Boolean()),
   mode: Type.Optional(

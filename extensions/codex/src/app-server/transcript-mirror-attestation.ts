@@ -70,16 +70,17 @@ export function attachCodexMirrorRunId<T extends AgentMessage>(
   runId: string,
   terminal = false,
   settlementWarning?: AttemptSettlementWarning,
+  execution?: { sessionId: string; threadId: string; turnId: string; nativeStatus: string },
 ): T {
   const existing = CODEX_META_KEY in message ? message[CODEX_META_KEY] : undefined;
   const metadata = asOptionalRecord(existing) ?? {};
-  const { runTerminal: _staleTerminal, ...current } = metadata;
+  const { runTerminal: _staleTerminal, execution: _staleExecution, ...current } = metadata;
   return {
     ...message,
     [CODEX_META_KEY]: {
       ...current,
       runId,
-      ...(terminal ? { runTerminal: true } : {}),
+      ...(terminal ? { runTerminal: true, ...(execution ? { execution } : {}) } : {}),
       ...(terminal && settlementWarning ? { settlementWarning } : {}),
     },
   } as T; // SAFETY: AgentMessage variants permit provider metadata at runtime; preserve T.

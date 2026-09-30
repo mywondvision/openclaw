@@ -54,9 +54,24 @@ export function shouldPrepareVitestCoreWorkers(
       ? ["src/plugins/contracts/plugin-sdk-package-contract-guardrails.test.ts"]
       : []),
   ];
+  // These lifecycle suites reach native declarations through shared runtime
+  // setup and fixture imports. Compile before Vitest starts its hook/watchdog
+  // clocks, using the same invocation owner and verified artifact generation.
+  const lifecycleWorkers = [
+    ...(includesProject("test/vitest/vitest.extension-codex.config.ts")
+      ? ["extensions/codex/src/app-server/strict-receipt.test.ts"]
+      : []),
+    ...(includesProject("test/vitest/vitest.extension-database-workers.config.ts")
+      ? ["extensions/codex/src/app-server/thread-lifecycle.binding.test.ts"]
+      : []),
+    ...(includesProject(agentVitestProjectOwners.support.config) ||
+    includesProject(agentVitestProjectOwners.all.config)
+      ? ["src/agents/harness/lifecycle.test.ts"]
+      : []),
+  ];
   const codeModeWorker = "src/agents/code-mode.import-boundary.test.ts";
   return (
-    workers.some((file) =>
+    [...workers, ...lifecycleWorkers].some((file) =>
       matchesVitestCliSelection(file, [file], args, "", env, includePatterns),
     ) ||
     ((includesProject(agentVitestProjectOwners.core.config) ||

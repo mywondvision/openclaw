@@ -498,6 +498,7 @@ export async function startCodexAttemptThread(params: {
                       scheduledRuntimeAuthority: attemptParams.scheduledRuntimeAuthority,
                     })
                   : undefined,
+                sandboxPolicy: startupSandboxPolicy,
               }) satisfies Parameters<typeof startOrResumeThread>[0];
             try {
               const startupThread = await startOrResumeThread(

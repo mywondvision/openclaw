@@ -82,6 +82,7 @@ export type CodexStartOrResumeThreadParams = Omit<
   agentDir?: string;
   cwd: string;
   dynamicTools: CodexDynamicToolSpec[];
+  sandboxPolicy?: import("./protocol.js").CodexSandboxPolicy;
   persistentWebSearchAllowed?: boolean;
   agentWorkspaceDeveloperInstructions?: string;
   finalConfigPatch?: JsonObject;

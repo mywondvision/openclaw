@@ -12,6 +12,7 @@ type InputProvenanceKind = (typeof INPUT_PROVENANCE_KIND_VALUES)[number];
 export type InputProvenance = {
   kind: InputProvenanceKind;
   originSessionId?: string;
+  continuation?: { harnessId: string; sessionId: string; threadId: string };
   sourceSessionKey?: string;
   sourceChannel?: string;
   sourceTool?: string;
@@ -71,6 +72,29 @@ export function normalizeInputProvenance(value: unknown): InputProvenance | unde
     return undefined;
   }
   const provenance: InputProvenance = { kind: record.kind };
+  if (record.continuation !== undefined) {
+    const request = record.continuation;
+    if (
+      !request ||
+      typeof request !== "object" ||
+      !("harnessId" in request) ||
+      typeof request.harnessId !== "string" ||
+      !request.harnessId ||
+      !("sessionId" in request) ||
+      !("threadId" in request) ||
+      typeof request.sessionId !== "string" ||
+      !request.sessionId ||
+      typeof request.threadId !== "string" ||
+      !/^[a-f0-9-]{36}$/i.test(request.threadId)
+    ) {
+      throw new Error("invalid_strict_continuation");
+    }
+    provenance.continuation = {
+      harnessId: request.harnessId,
+      sessionId: request.sessionId,
+      threadId: request.threadId,
+    };
+  }
   if (record.sourceRole === "subagent") {
     provenance.sourceRole = "subagent";
   }

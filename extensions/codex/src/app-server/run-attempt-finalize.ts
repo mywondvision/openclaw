@@ -77,7 +77,7 @@ export async function finalizeCodexAttempt(
   } = connection;
   const { toolBridge, toolState } = attemptTools;
   const canClearBindingForRecovery = (operation: string) => {
-    if (params.expectedSessionRuntimeOwnership) {
+    if (params.expectedSessionRuntimeOwnership || params.inputProvenance?.continuation) {
       // Optional recovery preserves both native ownership and the completed turn's outcome.
       embeddedAgentLog.warn(
         "codex app-server preserved native binding instead of recovery rotation",
@@ -161,7 +161,10 @@ export async function finalizeCodexAttempt(
           : enrichedPromptError
             ? formatErrorMessage(enrichedPromptError)
             : undefined;
-    if (isInvalidCodexImagePayloadError(enrichedPromptErrorMessage)) {
+    if (
+      !params.inputProvenance?.continuation &&
+      isInvalidCodexImagePayloadError(enrichedPromptErrorMessage)
+    ) {
       await clearCodexBindingAfterInvalidImagePayload(
         bindingStore,
         bindingIdentity,
@@ -362,6 +365,7 @@ export async function finalizeCodexAttempt(
         cwd: effectiveCwd,
         threadId: resourceState.thread.threadId,
         turnId: activeTurnId,
+        nativeStatus: mirrorTerminal.completedTurnStatus,
       });
     };
     try {

@@ -95,6 +95,31 @@ it.for([
   { name: "nonmatching include", args: [coreWorker], include: ["test/**"], prepare: false },
   { name: "root config", config: "vitest.config.ts", args: [coreWorker], prepare: true },
   { name: "custom config", config: "custom.config.ts", args: [coreWorker], prepare: false },
+  ...(
+    [
+      [
+        "test/vitest/vitest.extension-database-workers.config.ts",
+        "extensions/codex/src/app-server/thread-lifecycle.binding.test.ts",
+      ],
+      [
+        "test/vitest/vitest.extension-codex.config.ts",
+        "extensions/codex/src/app-server/strict-receipt.test.ts",
+      ],
+      [agentVitestProjectOwners.support.config, "src/agents/harness/lifecycle.test.ts"],
+      [agentVitestProjectOwners.all.config, "src/agents/harness/lifecycle.test.ts"],
+    ] as const
+  ).flatMap(([config, file]) => [
+    { name: `lifecycle ${config} ${file}`, config, args: [file], prepare: true },
+    { name: `excluded lifecycle ${file}`, config, args: [file, "--exclude", file], prepare: false },
+    { name: `omitted lifecycle ${file}`, config, args: [file], include: [], prepare: false },
+    { name: `wrong owner lifecycle ${file}`, config: infraConfig, args: [file], prepare: false },
+  ]),
+  {
+    name: "binding omitted from ordinary Codex shard",
+    config: "test/vitest/vitest.extension-codex.config.ts",
+    args: ["extensions/codex/src/app-server/thread-lifecycle.binding.test.ts"],
+    prepare: false,
+  },
   { name: "full channels", config: channelsConfig, args: [], prepare: true },
   {
     name: "focused channels",

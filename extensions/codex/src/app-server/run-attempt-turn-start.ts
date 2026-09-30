@@ -96,7 +96,8 @@ export async function startCodexAttemptTurn(
         contextEngineActive: Boolean(activeContextEngine),
         thread: resourceState.thread,
       }) &&
-      resourceState.restartContextEngineCodexThread
+      resourceState.restartContextEngineCodexThread &&
+      !params.inputProvenance?.continuation
     ) {
       try {
         assertCodexBindingMayBeReplaced(
@@ -144,7 +145,11 @@ export async function startCodexAttemptTurn(
         signal: runAbortController.signal,
       });
       const message = usageLimitError?.message ?? formatErrorMessage(turnStartError);
-      if (!params.providerReviewAcknowledgment && isInvalidCodexImagePayloadError(message)) {
+      if (
+        !params.inputProvenance?.continuation &&
+        !params.providerReviewAcknowledgment &&
+        isInvalidCodexImagePayloadError(message)
+      ) {
         await clearCodexBindingAfterInvalidImagePayload(
           bindingStore,
           bindingIdentity,

@@ -17,6 +17,13 @@ export function isCodexContextRestartSelectionChangedError(
   );
 }
 
+export class CodexStrictContinuationError extends AgentHarnessPreflightError {
+  constructor(reason: string) {
+    super(`codex_restricted_continuation:${reason}: no replacement thread was started`);
+    this.name = "CodexStrictContinuationError";
+  }
+}
+
 export class CodexThreadStartRequestError extends Error {
   constructor(cause: unknown) {
     super(`thread/start: ${formatErrorMessage(cause)}`, { cause });

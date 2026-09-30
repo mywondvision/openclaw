@@ -89,6 +89,7 @@ async function mirrorBestEffort(params: {
   cwd: string;
   threadId: string;
   turnId: string;
+  nativeStatus?: string;
 }): Promise<{
   assistantTranscriptOwned: boolean;
   assistantTranscriptIdempotencyKey?: string;
@@ -135,6 +136,12 @@ async function mirrorBestEffort(params: {
               mirrorIdentity: `${params.turnId}:assistant`,
               runId: params.params.runId,
               settlementWarning: params.settlementWarning,
+              execution: {
+                sessionId: params.params.sessionId,
+                threadId: params.threadId,
+                turnId: params.turnId,
+                nativeStatus: params.nativeStatus ?? "unknown",
+              },
             },
       prepareAssistantTranscriptMessage: params.params.prepareAssistantTranscriptMessage,
       config: params.params.config,

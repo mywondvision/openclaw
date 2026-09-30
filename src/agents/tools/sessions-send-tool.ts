@@ -28,7 +28,10 @@ import {
   normalizeAgentId,
   normalizeAgentIdStrict,
 } from "../../routing/session-key.js";
-import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
+import {
+  annotateInterSessionPromptText,
+  normalizeInputProvenance,
+} from "../../sessions/input-provenance.js";
 import { deriveSessionChatTypeFromKey } from "../../sessions/session-chat-type-shared.js";
 import {
   isCronRunSessionKey,
@@ -661,11 +664,24 @@ export function createSessionsSendTool(opts?: SessionsSendToolOptions): AnyAgent
                   requesterSessionKey: replyRequesterSessionKey,
                   requesterChannel,
                 });
+          const continuation = normalizeInputProvenance({
+            kind: "inter_session",
+            continuation: params.continuation,
+          })?.continuation;
+          if (
+            continuation &&
+            (mode !== "followup" ||
+              targetAcpMeta ||
+              continuation.sessionId !== targetSessionEntry?.sessionId)
+          ) {
+            throw new ToolInputError("strict_continuation_requires_exact_session_followup");
+          }
           const inputProvenance = {
             kind: "inter_session" as const,
             sourceSessionKey: replyRequesterSessionKey,
             sourceChannel: requesterChannel,
             sourceTool: "sessions_send",
+            ...(continuation ? { continuation } : {}),
             ...(requesterIsSubagent ? { sourceRole: "subagent" as const } : {}),
           };
           if (mode === "notify") {

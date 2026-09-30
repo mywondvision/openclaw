@@ -50,6 +50,16 @@ export const SessionLabelString = Type.String({
 export const InputProvenanceSchema = closedObject({
   kind: Type.String({ enum: [...INPUT_PROVENANCE_KIND_VALUES] }),
   originSessionId: Type.Optional(Type.String()),
+  continuation: Type.Optional(
+    Type.Object(
+      {
+        harnessId: Type.String({ minLength: 1 }),
+        sessionId: Type.String({ minLength: 1 }),
+        threadId: Type.String({ pattern: "^[a-fA-F0-9-]{36}$" }),
+      },
+      { additionalProperties: false },
+    ),
+  ),
   sourceSessionKey: Type.Optional(Type.String()),
   sourceChannel: Type.Optional(Type.String()),
   sourceTool: Type.Optional(Type.String()),

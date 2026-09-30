@@ -3,6 +3,7 @@ import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { isIncognitoSessionKey } from "openclaw/plugin-sdk/session-key-runtime";
 import { closeCodexStartupClientBestEffort } from "./attempt-client-cleanup.js";
 import { resolveCodexAppServerClientInstanceId } from "./client.js";
+import { codexContinuationPolicy } from "./continuation-policy.js";
 import { assertCodexInferenceRouteConfig } from "./inference-routing.js";
 import { applyCodexNativeSkillIsolation } from "./native-skill-isolation.js";
 import { hasCodexNativeToolCatalog, loadCodexNativeToolCatalog } from "./native-tool-catalog.js";
@@ -34,6 +35,7 @@ import {
   prepareCodexThreadResume,
   withCodexThreadLifecycleBinding,
 } from "./thread-lifecycle-adoption.js";
+import { CodexStrictContinuationError } from "./thread-lifecycle-errors.js";
 import { resumeExistingCodexThread, startFreshCodexThread } from "./thread-lifecycle-io.js";
 import {
   buildCodexThreadBindingPolicy,
@@ -63,6 +65,37 @@ export async function startOrResumeThread(
     const params: CodexStartOrResumeThreadParams = { ...input, assertCurrent: assert };
     const expectedOwnership = params.params.expectedSessionRuntimeOwnership;
     let binding = saved;
+    const strict = params.params.inputProvenance?.continuation;
+    const refuse = (reason: string): never => {
+      throw new CodexStrictContinuationError(reason);
+    };
+    if (strict) {
+      assert();
+      if (
+        !binding ||
+        params.params.sessionId !== strict.sessionId ||
+        binding.threadId !== strict.threadId
+      ) {
+        throw new CodexStrictContinuationError("runtime_identity_changed");
+      }
+      if (
+        !binding.continuationPolicy ||
+        binding.connectionScope === "supervision" ||
+        params.appServer.networkProxy
+      )
+        refuse("attestation_unavailable");
+      if (binding.continuationPolicy !== codexContinuationPolicy(params))
+        refuse("permission_policy_changed");
+      if (binding.pendingResumeConfiguration || binding.pendingSupervisionBranch)
+        refuse("pending_native_transition");
+      if (!binding.dynamicToolsFingerprint || !binding.webSearchThreadConfigFingerprint)
+        refuse("attestation_unavailable");
+    }
+    const mayReplace: typeof assertCodexBindingMayBeReplaced = (...args) => {
+      assert();
+      if (strict) refuse("binding_replace_denied");
+      return assertCodexBindingMayBeReplaced(...args);
+    };
     let selectionBinding = binding;
     if (hasCodexNativeToolCatalog(binding)) {
       // A resumed native catalog is immutable data. Run eligibility only changes
@@ -238,7 +271,7 @@ export async function startOrResumeThread(
       if (!current?.threadId) {
         return;
       }
-      assertCodexBindingMayBeReplaced(current, operation, expectedOwnership);
+      mayReplace(current, operation, expectedOwnership);
       assert();
       // Replacement CAS needs the predecessor row to preserve same-connection inventory.
       replacementPredecessor = current;
@@ -259,7 +292,9 @@ export async function startOrResumeThread(
     const persistentWebSearchRestriction =
       params.webSearchAllowed === false && params.persistentWebSearchAllowed === false;
     const transientNativeToolRestriction =
-      params.nativeCodeModeEnabled === false && !persistentWebSearchRestriction;
+      params.nativeCodeModeEnabled === false &&
+      !persistentWebSearchRestriction &&
+      !(strict && binding?.nativeToolPolicyRestricted === true && restrictedToolSurface);
     const transientWebSearchRestriction = isTransientWebSearchRestriction(params);
     if (binding?.pendingResumeConfiguration) {
       const resumed = await resumePendingCodexThread(params, {
@@ -416,7 +451,7 @@ export async function startOrResumeThread(
       params.mcpServersFingerprintEvaluated === true &&
       binding.mcpServersFingerprint !== params.mcpServersFingerprint
     ) {
-      assertCodexBindingMayBeReplaced(binding, "changing MCP configuration", expectedOwnership);
+      mayReplace(binding, "changing MCP configuration", expectedOwnership);
       if (
         !ringZeroActive &&
         (transientNativeToolRestriction ||
@@ -447,11 +482,7 @@ export async function startOrResumeThread(
       webSearchBindingChanged &&
       !deferLegacyWebSearchRotationToTransientNativeSurface
     ) {
-      assertCodexBindingMayBeReplaced(
-        binding,
-        "changing web-search configuration",
-        expectedOwnership,
-      );
+      mayReplace(binding, "changing web-search configuration", expectedOwnership);
       if (!ringZeroActive && transientWebSearchRestriction) {
         embeddedAgentLog.debug(
           "codex app-server tool surface restricted for turn; starting transient thread",
@@ -468,11 +499,7 @@ export async function startOrResumeThread(
       binding = undefined;
     }
     if (binding?.threadId && transientNativeToolRestriction && !ringZeroActive) {
-      assertCodexBindingMayBeReplaced(
-        binding,
-        "starting a native-tool-restricted turn",
-        expectedOwnership,
-      );
+      mayReplace(binding, "starting a native-tool-restricted turn", expectedOwnership);
       embeddedAgentLog.debug(
         "codex app-server native tool surface disabled for turn; starting transient thread",
         {
@@ -483,11 +510,7 @@ export async function startOrResumeThread(
       binding = undefined;
     }
     if (binding?.threadId && transientDelegationRestriction) {
-      assertCodexBindingMayBeReplaced(
-        binding,
-        "starting a delegation-restricted turn",
-        expectedOwnership,
-      );
+      mayReplace(binding, "starting a delegation-restricted turn", expectedOwnership);
       // Loaded Codex threads ignore resume config overrides. Keep the normal
       // binding intact and start a transient thread with collaboration disabled.
       embeddedAgentLog.debug(
@@ -564,11 +587,7 @@ export async function startOrResumeThread(
           nextLegacy: legacyDynamicToolsFingerprint,
         })
       ) {
-        assertCodexBindingMayBeReplaced(
-          binding,
-          "changing the dynamic tool catalog",
-          expectedOwnership,
-        );
+        mayReplace(binding, "changing the dynamic tool catalog", expectedOwnership);
         preserveExistingBinding = shouldStartTransientNoToolThread({
           previous: binding.dynamicToolsFingerprint,
           nextHasDynamicTools: params.dynamicTools.length > 0,
@@ -627,7 +646,7 @@ export async function startOrResumeThread(
       }
     }
 
-    assertCodexBindingMayBeReplaced(binding, "starting a fresh native thread", expectedOwnership);
+    mayReplace(binding, "starting a fresh native thread", expectedOwnership);
     const requestContext = await prepareRequestContext();
     if (initialBoundThreadId && !preserveExistingBinding && !configuredMcpOwnershipChanged) {
       await releaseRetainedThread(initialBoundThreadId);

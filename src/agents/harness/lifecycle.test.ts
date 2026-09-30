@@ -939,3 +939,22 @@ describe("AgentHarness lifecycle runner", () => {
     expect(dispose).not.toHaveBeenCalled();
   });
 });
+
+it("strict continuation cannot execute through another fallback harness", async () => {
+  const params = createAttemptParams();
+  params.inputProvenance = {
+    kind: "inter_session",
+    continuation: { harnessId: "codex", sessionId: params.sessionId, threadId: "selected" },
+  };
+  const runAttempt = vi.fn(async () => createAttemptResult());
+  const harness: AgentHarness = {
+    id: "other",
+    label: "Other",
+    supports: () => ({ supported: true, priority: 1 }),
+    runAttempt,
+  };
+  await expect(runAgentHarnessLifecycleAttempt(harness, params)).rejects.toThrow(
+    "strict_continuation_harness_changed",
+  );
+  expect(runAttempt).not.toHaveBeenCalled();
+});
